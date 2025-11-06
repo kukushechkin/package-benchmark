@@ -107,17 +107,20 @@ static void CLinuxPerformanceCountersInit() {
     pe.inherit_stat = 1;
     pe.pinned = 1;
 
-    for (cpu = 0; cpu < performanceCountersContext.cpuCount; cpu++) {
-        performanceCountersContext.fds[cpu] = syscall(SYS_perf_event_open, &pe, 0, performanceCountersContext.cpus[cpu], -1, 0);
-        errorCode = errno;
-        if (performanceCountersContext.fds[cpu] == -1) {
-            performanceCountersContext.cpuCount = 0;
-            fprintf(stderr, "Can't enable performance counters for instructions metric, error in perf_event_open syscall, failed with [%d], error: %s\n", errorCode, strerror(errorCode));
-            fprintf(stderr, "Failed on CPU index %d (CPU ID: %d)\n", cpu, performanceCountersContext.cpus[cpu]);
-            fprintf(stderr, "Total CPUs from /proc/cpuinfo: %d\n", performanceCountersContext.cpuCount);
-            return;
-        } 
+    // Try to open perf event on any CPU first (cpu=-1)
+    // This is more compatible and works with perf_event_paranoid=2
+    performanceCountersContext.fds[0] = syscall(SYS_perf_event_open, &pe, 0, -1, -1, 0);
+    errorCode = errno;
+    if (performanceCountersContext.fds[0] == -1) {
+        fprintf(stderr, "Can't enable performance counters for instructions metric, error in perf_event_open syscall, failed with [%d], error: %s\n", errorCode, strerror(errorCode));
+        fprintf(stderr, "Tried with pid=0, cpu=-1 (any CPU)\n");
+        fprintf(stderr, "Total CPUs from /proc/cpuinfo: %d\n", performanceCountersContext.cpuCount);
+        performanceCountersContext.cpuCount = 0;
+        return;
     }
+
+    // Success with cpu=-1, only use one fd for all CPUs
+    performanceCountersContext.cpuCount = 1;
     return;
 }
 
