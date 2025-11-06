@@ -115,8 +115,25 @@ static void CLinuxPerformanceCountersInit() {
         fprintf(stderr, "Can't enable performance counters for instructions metric, error in perf_event_open syscall, failed with [%d], error: %s\n", errorCode, strerror(errorCode));
         fprintf(stderr, "Tried with pid=0, cpu=-1 (any CPU)\n");
         fprintf(stderr, "Total CPUs from /proc/cpuinfo: %d\n", performanceCountersContext.cpuCount);
-        performanceCountersContext.cpuCount = 0;
-        return;
+
+        // Try without the 'pinned' flag which may fail in VMs
+        pe.pinned = 0;
+        performanceCountersContext.fds[0] = syscall(SYS_perf_event_open, &pe, 0, -1, -1, 0);
+        errorCode = errno;
+        if (performanceCountersContext.fds[0] == -1) {
+            fprintf(stderr, "Retry without pinned flag also failed with [%d], error: %s\n", errorCode, strerror(errorCode));
+
+            // Try with exclude_hv=0 (include hypervisor)
+            pe.exclude_hv = 0;
+            performanceCountersContext.fds[0] = syscall(SYS_perf_event_open, &pe, 0, -1, -1, 0);
+            errorCode = errno;
+            if (performanceCountersContext.fds[0] == -1) {
+                fprintf(stderr, "Retry with exclude_hv=0 also failed with [%d], error: %s\n", errorCode, strerror(errorCode));
+                fprintf(stderr, "Performance counters are not available on this system (VM without PMU support?)\n");
+                performanceCountersContext.cpuCount = 0;
+                return;
+            }
+        }
     }
 
     // Success with cpu=-1, only use one fd for all CPUs
